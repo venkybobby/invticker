@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-space-grotesk);
+}
+
+body { font-family: var(--font-sans); }
+.font-display { font-family: var(--font-display); }
+
+.finance-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.finance-card:hover { transform: translateY(-1px); box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1); }
+.metric-input { background-color: #0f172a; border: 1px solid #334155; color: #e2e8f0; transition: all 0.1s ease; }
+.metric-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+.table-input { background-color: #0f172a; border: 1px solid #334155; color: #e2e8f0; }
+.table-input:focus { border-color: #3b82f6; outline: none; }
