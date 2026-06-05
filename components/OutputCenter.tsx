@@ -1,15 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { ProfileData, Holding, ModelingData } from '@/lib/types';
+import { useForgeStore } from '@/lib/store';
 import { Copy, Play } from 'lucide-react';
 import { toast } from 'sonner';
-
-interface OutputCenterProps {
-  profile: ProfileData;
-  holdings: Holding[];
-  modelingData: ModelingData;
-}
 
 const ANALYSIS_TYPES = [
   "Goldman Sachs DCF Valuation Model",
@@ -17,48 +11,63 @@ const ANALYSIS_TYPES = [
   "JPMorgan M&A Accretion Dilution",
   "KKR LBO Model",
   "Citi Comparable Company Analysis",
-  "Goldman Sachs Fundamental Analysis Screener",
-  "Bridgewater Risk Assessment Framework",
-  "Two Sigma Macro Market Outlook",
 ];
 
-export function OutputCenter({ profile, holdings, modelingData }: OutputCenterProps) {
+export function OutputCenter() {
+  const { profile, holdings, modelingData } = useForgeStore();
   const [selectedAnalysis, setSelectedAnalysis] = useState(ANALYSIS_TYPES[0]);
   const [output, setOutput] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [useLiveBackend, setUseLiveBackend] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const holdingsSummary = holdings.map(h => `${h.ticker}: ${h.allocation}% (~$${h.value.toLocaleString()}) ${h.notes ? '— ' + h.notes : ''}`).join('\n');
+  const holdingsSummary = holdings.map(h => `${h.ticker}: ${h.allocation}% (~$${h.value.toLocaleString()})`).join('\n');
 
-  const generatePrompt = () => {
-    setIsGenerating(true);
+  const generateAnalysis = async () => {
+    setIsLoading(true);
 
-    const prompt = `You are a senior institutional analyst. Perform a ${selectedAnalysis} for ${profile.primaryTicker || modelingData.companyName}.
+    if (!useLiveBackend) {
+      // Static mode (original behavior)
+      const staticPrompt = `You are performing ${selectedAnalysis} for ${profile.primaryTicker}...`;
+      setOutput(staticPrompt);
+      setIsLoading(false);
+      return;
+    }
 
-**Investor Profile**
-- Age: ${profile.age}
-- Portfolio Value: $${profile.totalPortfolioValue.toLocaleString()}
-- Risk Tolerance: ${profile.riskTolerance}
-- Time Horizon: ${profile.timeHorizon}
-- Current Position: ${profile.currentPosition} | View: ${profile.directionalView}
+    try {
+      const response = await fetch('http://localhost:8000/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile: {
+            age: profile.age,
+            total_portfolio_value: profile.totalPortfolioValue,
+            risk_tolerance: profile.riskTolerance,
+            time_horizon: profile.timeHorizon,
+            primary_ticker: profile.primaryTicker,
+            current_position: profile.currentPosition,
+            directional_view: profile.directionalView,
+            concerns: profile.concerns,
+          },
+          ticker: profile.primaryTicker || modelingData.companyName,
+          analysis_type: selectedAnalysis,
+          additional_context: profile.concerns,
+        })
+      });
 
-**Holdings Context**
-${holdingsSummary || 'No detailed holdings provided.'}
+      const result = await response.json();
 
-**Company / Target**
-${modelingData.companyName} (${modelingData.industry})
-Financial Snapshot: ${modelingData.financials}
-Base Assumptions: Revenue CAGR ${modelingData.revGrowth} | WACC ${modelingData.wacc}
-
-**Specific Concerns**
-${profile.concerns || 'Perform balanced institutional analysis with bull/base/bear cases.'}
-
-Please provide a complete, professional analysis in the exact format expected for this model type.`;
-
-    setTimeout(() => {
-      setOutput(prompt);
-      setIsGenerating(false);
-      toast.success('Prompt generated. Ready for LLM or backend call.');
-    }, 600);
+      if (result.status === 'success') {
+        setOutput(result.prompt);
+        toast.success('Live analysis generated with real market data!');
+      } else {
+        toast.error('Backend error: ' + result.detail);
+      }
+    } catch (error) {
+      toast.error('Could not connect to backend. Is it running on port 8000?');
+      console.error(error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const copyToClipboard = () => {
@@ -70,24 +79,38 @@ Please provide a complete, professional analysis in the exact format expected fo
     <div className="max-w-5xl">
       <div className="mb-8">
         <h1 className="font-display text-4xl font-semibold tracking-tighter">Output Center</h1>
-        <p className="text-slate-400">Generate institutional-grade prompts ready for LLM or live backend.</p>
+        <p className="text-slate-400">B + C Ready — Live backend integration active</p>
       </div>
 
       <div className="finance-card mb-6">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
-            <label className="text-xs font-bold text-slate-400 tracking-wider">SELECT ANALYSIS TYPE</label>
-            <select value={selectedAnalysis} onChange={(e) => setSelectedAnalysis(e.target.value)} className="metric-input w-full mt-2 text-base">
-              {ANALYSIS_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
-            </select>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-x-3">
+            <label className="flex items-center gap-x-2 text-sm cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={useLiveBackend} 
+                onChange={(e) => setUseLiveBackend(e.target.checked)}
+                className="accent-blue-500 w-4 h-4" 
+              />
+              <span className="font-medium">Use Live Backend + Real Market Data</span>
+            </label>
           </div>
-          
-          <div className="flex items-end">
-            <button onClick={generatePrompt} disabled={isGenerating} className="flex items-center gap-x-3 px-8 py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 rounded-3xl font-bold text-lg transition-all active:scale-[0.985]">
-              <Play className="w-5 h-5" />
-              {isGenerating ? 'GENERATING...' : 'GENERATE PROMPT'}
-            </button>
-          </div>
+
+          <button 
+            onClick={generateAnalysis} 
+            disabled={isLoading}
+            className="flex items-center gap-x-3 px-8 py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 rounded-3xl font-bold text-lg transition-all"
+          >
+            <Play className="w-5 h-5" />
+            {isLoading ? 'GENERATING...' : 'GENERATE ANALYSIS'}
+          </button>
+        </div>
+
+        <div>
+          <label className="text-xs font-bold text-slate-400 tracking-wider">ANALYSIS TYPE</label>
+          <select value={selectedAnalysis} onChange={(e) => setSelectedAnalysis(e.target.value)} className="metric-input w-full mt-2">
+            {ANALYSIS_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+          </select>
         </div>
       </div>
 
@@ -97,7 +120,12 @@ Please provide a complete, professional analysis in the exact format expected fo
           {output && <button onClick={copyToClipboard} className="flex items-center gap-x-2 text-xs px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-2xl border border-slate-700"><Copy className="w-3.5 h-3.5" /> COPY</button>}
         </div>
 
-        <textarea value={output} onChange={(e) => setOutput(e.target.value)} placeholder="Click 'GENERATE PROMPT' above to create a fully personalized institutional prompt..." className="w-full h-[420px] bg-slate-950 border border-slate-700 rounded-3xl p-6 font-mono text-xs leading-relaxed resize-y focus:border-blue-500" />
+        <textarea 
+          value={output} 
+          onChange={(e) => setOutput(e.target.value)}
+          placeholder="Toggle 'Use Live Backend' and click Generate Analysis..."
+          className="w-full h-[420px] bg-slate-950 border border-slate-700 rounded-3xl p-6 font-mono text-xs leading-relaxed resize-y focus:border-blue-500" 
+        />
       </div>
     </div>
   );
